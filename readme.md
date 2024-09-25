@@ -19,7 +19,7 @@
 1. リポジトリをクローンします。
 
   ```bash
-  git clone https://github.com/yourusername/rishu-bot.git
+  git clone https://github.com/ToYama170402/rishu-bot.git
   cd rishu-bot
   ```
 
