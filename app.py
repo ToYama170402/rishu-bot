@@ -14,22 +14,27 @@ from discord.ext import tasks
 dotenv.load_dotenv()
 
 # Discord Botのトークン
-TOKEN = os.getenv("TOKEN")
+if "TOKEN" not in os.environ:
+    raise ValueError("No token provided.")
+TOKEN = str(os.getenv("TOKEN"))
 
 # 通知を送るチャンネルID
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+if "CHANNEL_ID" not in os.environ:
+    raise ValueError("No channel id provided.")
+CHANNEL_ID = int(str(os.getenv("CHANNEL_ID")))
 
 # 監視するAPIのURL
 API_URL = "https://kurisyushien.org/api"
 
-# ロガーの設定
-logger = logging.getLogger("discord")
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 # Discordクライアントの設定
 client = discord.Client(intents=intents)
+
+# ロガーの設定
+logger = logging.getLogger("discord")
 
 # 前回のAPIレスポンスを保存する変数
 previous_response = None
@@ -76,45 +81,60 @@ def diff_row(
     ]
 
 
+def split_list(lst, chunk_size):
+    """
+    リストを指定されたサイズで分割する関数。
+    params:lst: 分割するリスト
+    params:chunk_size: 分割するサイズ
+    return: 分割されたリスト
+    """
+    for i in range(0, len(lst), chunk_size):
+        yield lst[i : i + chunk_size]
+
+
 @client.event
 async def on_ready():
-    logger.info(f"Botがログインしました: {client.user}")
+    logger.info(f"Logged in as {client.user}")
     check_api.start()
 
 
 @tasks.loop(minutes=1)
 async def check_api():
     global previous_response
+    logger.info("Fetching API...")
     response = requests.get(API_URL)
+    logger.info(f"Status code: {response.status_code}")
     if response.status_code == 200:
         current_response = parse_tsv(response.text)[
             1:
         ]  # １行目はタイムスタンプなので除外
         if previous_response is not None and current_response != previous_response:
             diff_list = diff_row(previous_response, current_response)
+            logger.info(f"Changed: {len(diff_list)}")
             channel = client.get_channel(CHANNEL_ID)
             if isinstance(channel, discord.TextChannel):
-                embed = discord.Embed(title="新着情報", color=0x00FF00)
-                for p, c in diff_list:
-                    if p is None:
-                        embed.add_field(name=c[0], value=c[1], inline=False)
-                    else:
-                        logger.info(f"変更があった項目: {c}")
-                        embed.add_field(
-                            name=f"{p[2]}",
-                            value=f"{p[6]} -> {c[6]}",
-                            inline=False,
-                        )
-                        embed.add_field(
-                            name="シラバス",
-                            value=f"[リンク](https://eduweb.sta.kanazawa-u.ac.jp/Portal/Public/Syllabus/DetailMain.aspx?student=1&lct_year={datetime.now().year}&lct_cd={c[0]}&je_cd=1&ActingAccess=1)",
-                        )
-                await channel.send(embed=embed)
-        elif previous_response is None:
-            channel = client.get_channel(CHANNEL_ID)
+                embed = discord.Embed(title="新着｜履修登録状況", color=0x00FF00)
+                for chunk in split_list(diff_list, 10):  # 例として10個ずつ分割
+                    for p, c in chunk:
+                        if p is None:
+                            embed.add_field(name=c[0], value=c[1], inline=False)
+                        else:
+                            embed.add_field(
+                                name=f"{p[2]}",
+                                value=f"""
+                                適正人数：{p[-3]}
+                                登録数：{p[-2]} -> {c[-2]}
+                                登録残数：{p[-1]} -> {c[-1]}
+                                [シラバス](https://eduweb.sta.kanazawa-u.ac.jp/Portal/Public/Syllabus/DetailMain.aspx?student=1&lct_year={datetime.now().year}&lct_cd={c[0]}&je_cd=1&ActingAccess=1)
+                                """,
+                                inline=False,
+                            )
+                    await channel.send(embed=embed)
+            else:
+                logger.error("Not found channel.")
         previous_response = current_response
     else:
-        print(f"APIリクエストに失敗しました: {response.status_code}")
+        logger.error(f"Failed to fetch API: {response.status_code}")
 
 
 # Botを実行
