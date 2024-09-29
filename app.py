@@ -113,8 +113,8 @@ async def check_api():
             logger.info(f"Changed: {len(diff_list)}")
             channel = client.get_channel(CHANNEL_ID)
             if isinstance(channel, discord.TextChannel):
-                embed = discord.Embed(title="新着｜履修登録状況", color=0x00FF00)
                 for chunk in split_list(diff_list, 10):  # 例として10個ずつ分割
+                    embed = discord.Embed(title="新着｜履修登録状況", color=0x00FF00)
                     for p, c in chunk:
                         if p is None:
                             embed.add_field(name=c[0], value=c[1], inline=False)
